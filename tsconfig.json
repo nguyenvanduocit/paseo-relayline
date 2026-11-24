@@ -19,6 +19,7 @@
   "include": [
     "index.client.tsx",
     "client/**/*.tsx",
+    "client/**/*.ts",
     "shared/**/*.ts"
   ]
 }

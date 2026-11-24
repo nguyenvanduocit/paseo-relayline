@@ -7,6 +7,8 @@ import { preferences } from "../shared/contracts";
 const bridge = vi.hoisted(() => ({ ready: true, update: vi.fn(), directory: "/tmp/relayline-demo" }));
 vi.mock("./setup", () => ({
   liveConfigured: async () => bridge.ready,
+  readHostConfig: async () => null,
+  competingPlugin: () => false,
 }));
 vi.mock("./claude-live", () => ({
   liveClaudeDirectory: () => bridge.directory,
@@ -23,7 +25,8 @@ beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), "relayline-pool-"));
   bridge.ready = true;
   bridge.update.mockReset().mockResolvedValue(123);
-  vi.stubGlobal("fetch", vi.fn(async (_url: string, init: RequestInit) => {
+  vi.stubGlobal("fetch", vi.fn(async (url: string, init: RequestInit) => {
+    if (url.endsWith("/api/oauth/usage")) return new Response(null, { status: 403 });
     const headers = init.headers as Record<string, string>;
     return new Response(null, { status: headers.Authorization.includes("fixture-rejected") ? 401 : 200 });
   }));
@@ -81,4 +84,16 @@ describe("account pool", () => {
     bridge.ready = false;
     expect(await pool.open("example", settings)).toBeUndefined();
   });
+});
+
+it("keeps token health usable while pausing all quota probes on provider throttling", async () => {
+  const fetcher = vi.fn(async (url: string) => url.endsWith("/api/oauth/usage")
+    ? new Response(null, { status: 429, headers: { "retry-after": "600" } })
+    : new Response(null, { status: 200 }));
+  vi.stubGlobal("fetch", fetcher);
+  await pool.save({ label: "First", token: first });
+  const { accounts } = await pool.save({ label: "Second", token: second });
+  expect(accounts.map((account) => account.health)).toEqual(["ready", "ready"]);
+  expect(accounts.map((account) => account.quota?.status ?? null)).toEqual(["unavailable", null]);
+  expect(fetcher.mock.calls.filter(([url]) => url.endsWith("/api/oauth/usage"))).toHaveLength(1);
 });

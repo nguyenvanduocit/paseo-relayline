@@ -5,6 +5,8 @@ import { useRpc, useSettings, type PluginScreenProps } from "@getpaseo/plugin/cl
 import { SettingsAction, SettingsCard, SettingsInput, SettingsSection, SettingsSelect } from "@getpaseo/plugin/client/ui";
 import { editAccount, importAccounts, poolStatus, preferences, saveAccount, setupLive, useAccount, type Preferences } from "../shared/contracts";
 
+import { QuotaDetails } from "./quota";
+
 const healthLabel = {
   unchecked: "Checking token", ready: "Ready", rejected: "Replace token",
   unreachable: "Check unavailable", cooling: "Cooling down",
@@ -69,44 +71,50 @@ export function AccountScreen({ theme, params }: PluginScreenProps) {
             }, "")} />
         </SettingsCard>
         {draft && !draft.id ? editor : null}
-        {(pool.data?.accounts ?? []).map((account) => (
-          <SettingsCard key={account.id}>
-            <SettingsAction label={account.label} hint={[
-              account.parked ? "Parked" : healthLabel[account.health],
-              pool.data?.activeAccount === account.id ? "In use by this agent" : null,
-            ].filter(Boolean).join(" · ")} actionLabel={expanded === account.id ? "Done" : "Manage"} disabled={busy || !!draft}
-              onPress={() => {
-                setExpanded(expanded === account.id ? null : account.id);
-                setRemove(null);
-              }} />
-            {agentId && pool.data?.activeAccount && pool.data.activeAccount !== account.id && !account.parked && account.health === "ready" ? (
-              <SettingsAction label="This conversation" actionLabel="Switch account" disabled={busy}
-                onPress={() => void perform(() => activate({ agentId, accountId: account.id }), "Account switched.")} />
-            ) : null}
-            {expanded === account.id ? <>
-              <SettingsAction label="Name or OAuth token" actionLabel="Edit" disabled={busy || !!draft}
-                onPress={() => setDraft({ id: account.id, label: account.label, token: "" })} />
-              {draft?.id === account.id ? editor : null}
-              <SettingsAction label="Token health" actionLabel="Check" disabled={busy}
-                onPress={() => void perform(() => edit({ id: account.id, action: "check" }), "Check complete.")} />
-              <SettingsAction label={account.parked ? "Allow automatic selection" : "Take out of rotation"}
-                actionLabel={account.parked ? "Restore" : "Park"} disabled={busy}
-                onPress={() => void perform(() => edit({ id: account.id, action: account.parked ? "restore" : "park" }), "")} />
-              <SettingsAction label={remove === account.id ? "Remove from Relayline? Claude keeps its login." : "Remove account"}
-                actionLabel={remove === account.id ? "Confirm removal" : "Remove"} disabled={busy}
+        {pool.data?.accounts.length ? <SettingsCard>
+          {pool.data.accounts.map((account) => (
+            <View key={account.id}>
+              <SettingsAction label={account.label} hint={[
+                account.parked ? "Parked" : healthLabel[account.health],
+                pool.data?.activeAccount === account.id ? "In use by this agent" : null,
+                ...((account.quota?.windows ?? []).filter((window) => window.id === "five_hour" && !!window.resetsAt && window.resetsAt > Date.now())
+                  .map((window) => `5h: ${Math.round(100 - window.usedPercent)}% left`)),
+              ].filter(Boolean).join(" · ")} actionLabel={expanded === account.id ? "Done" : "Manage"} disabled={busy || !!draft}
                 onPress={() => {
-                  if (remove !== account.id) return setRemove(account.id);
-                  void perform(async () => { await edit({ id: account.id, action: "remove" }); setRemove(null); }, "Account removed.");
+                  setExpanded(expanded === account.id ? null : account.id);
+                  setRemove(null);
                 }} />
-            </> : null}
-          </SettingsCard>
-        ))}
+              {agentId && pool.data?.activeAccount && pool.data.activeAccount !== account.id && !account.parked && account.health === "ready" ? (
+                <SettingsAction label="This conversation" actionLabel="Switch account" disabled={busy}
+                  onPress={() => void perform(() => activate({ agentId, accountId: account.id }), "Account switched.")} />
+              ) : null}
+              {expanded === account.id ? <>
+                <SettingsAction label="Name or OAuth token" actionLabel="Edit" disabled={busy || !!draft}
+                  onPress={() => setDraft({ id: account.id, label: account.label, token: "" })} />
+                {draft?.id === account.id ? editor : null}
+                <View style={{ paddingHorizontal: 12, paddingVertical: 8 }}><QuotaDetails quota={account.quota} theme={theme} /></View>
+                <SettingsAction label="Token health" actionLabel="Check" disabled={busy}
+                  onPress={() => void perform(() => edit({ id: account.id, action: "check" }), "Check complete.")} />
+                <SettingsAction label={account.parked ? "Allow automatic selection" : "Take out of rotation"}
+                  actionLabel={account.parked ? "Restore" : "Park"} disabled={busy}
+                  onPress={() => void perform(() => edit({ id: account.id, action: account.parked ? "restore" : "park" }), "")} />
+                <SettingsAction label={remove === account.id ? "Remove from Relayline? Claude keeps its login." : "Remove account"}
+                  actionLabel={remove === account.id ? "Confirm removal" : "Remove"} disabled={busy}
+                  onPress={() => {
+                    if (remove !== account.id) return setRemove(account.id);
+                    void perform(async () => { await edit({ id: account.id, action: "remove" }); setRemove(null); }, "Account removed.");
+                  }} />
+              </> : null}
+            </View>
+          ))}
+        </SettingsCard> : null}
       </SettingsSection>
       <SettingsSection title="Routing and recovery">
         <SettingsCard>
           {!pool.data?.liveReady ? <SettingsAction label="Live account switching"
-            hint="Set up the Claude launcher on this host. This changes Paseo’s Claude command."
-            actionLabel="Enable" disabled={busy || pool.isLoading} onPress={() => void perform(async () => {
+            hint={pool.data?.blockedByZeroSub ? "ZeroSub is still routing Claude. Disable it in Paseo Settings → Plugins after importing the accounts." :
+              "Set up the Claude launcher on this host. This changes Paseo’s Claude command."}
+            actionLabel="Enable" disabled={busy || pool.isLoading || !!pool.data?.blockedByZeroSub} onPress={() => void perform(async () => {
               await setup({});
               if (settings.status === "ready" && settings.values.accountPolicy === "off") {
                 const saved = await settings.save({ ...settings.values, accountPolicy: "sticky" }, settings.revision);

@@ -30,7 +30,13 @@ export default function contribute(server: PluginServerContext) {
       throw new Error(error instanceof Error && !("cmd" in error) ? error.message : "Paseo could not reload its Claude command.");
     }
   });
-  server.handle(poolStatus, ({ agentId }) => pool.view(agentId));
+  server.handle(poolStatus, async ({ agentId }, { paseo }) => {
+    const [poolView, session] = await Promise.all([
+      pool.view(agentId),
+      agentId ? paseo.agents.ref(agentId).refresh().catch(() => null) : null,
+    ]);
+    return { ...poolView, sessionUsage: session?.agent.lastUsage ?? null };
+  });
   server.handle(saveAccount, (input) => pool.save(input));
   server.handle(editAccount, ({ id, action }) => pool.edit(id, action));
   server.handle(importAccounts, async () => {

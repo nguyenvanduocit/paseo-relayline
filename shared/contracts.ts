@@ -32,11 +32,20 @@ export const resume = defineRpc({
 export const followUp =
   "Continue the previous task from where it stopped. Use the conversation and existing work. Inspect uncertain side effects before repeating any action.";
 
+const quotaSchema = z.object({
+  status: z.enum(["available", "restricted", "unavailable"]),
+  checkedAt: z.number(),
+  windows: z.array(z.object({ id: z.string(), label: z.string(), usedPercent: z.number(), resetsAt: z.number().nullable() })),
+});
+export type Quota = z.infer<typeof quotaSchema>;
+
 const health = z.enum(["unchecked", "ready", "rejected", "unreachable", "cooling"]);
 export const poolView = z.object({
-  accounts: z.array(z.object({ id: z.string(), label: z.string(), health, parked: z.boolean(), availableAt: z.number().nullable() })),
+  accounts: z.array(z.object({ id: z.string(), label: z.string(), health, parked: z.boolean(), availableAt: z.number().nullable(), quota: quotaSchema.nullable() })),
   activeAccount: z.string().nullable(),
   liveReady: z.boolean(),
+  blockedByZeroSub: z.boolean(),
+  sessionUsage: z.object({ inputTokens: z.number().optional(), outputTokens: z.number().optional() }).nullable().default(null),
 });
 export const poolStatus = defineRpc({ name: "relayline.pool.status",
   input: z.object({ agentId: z.string().optional() }), output: poolView });

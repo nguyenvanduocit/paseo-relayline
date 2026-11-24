@@ -3,8 +3,9 @@ import { mkdir, readFile, rename, writeFile, unlink } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { z } from "zod";
 import { liveClaudeDirectory, updateClaudeToken } from "./claude-live";
-import { liveConfigured, paseoHome } from "./setup";
-import type { Preferences } from "../shared/contracts";
+import { competingPlugin, liveConfigured, paseoHome, readHostConfig } from "./setup";
+import { readQuota } from "./quota";
+import type { Preferences, Quota } from "../shared/contracts";
 
 const credential = z.string().regex(/^sk-ant-oat[A-Za-z0-9_-]+$/).max(8192);
 const storedAccounts = z.array(z.object({
@@ -17,10 +18,13 @@ const fingerprint = (token: string) => createHash("sha256").update(token).digest
 
 export class Pool {
   private readonly health = new Map<string, { status: Health; checkedAt: number; fingerprint: string }>();
+  private readonly quotas = new Map<string, { fingerprint: string; data: Quota; retryAt: number }>();
   private readonly cooldown = new Map<string, number>();
   private readonly assignments = new Map<string, Route>();
   private readonly switches = new Set<string>();
   private writes = Promise.resolve();
+  private quotaChecks = Promise.resolve();
+  private quotaRetryAt = 0;
   private previous: string | undefined;
   private readonly data: string;
   private readonly file: string;
@@ -67,10 +71,15 @@ export class Pool {
     const now = Date.now();
     const accounts = (await this.read()).map(({ id, label, parked, token }) => {
       const until = this.cooldown.get(id);
+      const quota = this.quotas.get(id);
       return { id, label, parked, health: until && until > now ? "cooling" as const : this.tokenHealth(id, token),
-        availableAt: until && until > now ? until : null };
+        availableAt: until && until > now ? until : null,
+        quota: quota?.fingerprint === fingerprint(token) ? quota.data : null };
+
     });
-    return { accounts, activeAccount: agentId ? this.assignments.get(agentId)?.accountId ?? null : null, liveReady: await liveConfigured() };
+    const config = await readHostConfig().catch(() => null);
+    return { accounts, activeAccount: agentId ? this.assignments.get(agentId)?.accountId ?? null : null,
+      liveReady: await liveConfigured(), blockedByZeroSub: !!config && competingPlugin(config) };
   }
 
   async save({ id, label, token }: { id?: string; label: string; token: string }) {
@@ -132,8 +141,12 @@ export class Pool {
       await this.mutate((accounts) => {
         const index = accounts.findIndex((account) => account.id === id);
         if (index < 0) throw new Error("This account is no longer in the pool.");
-        if (action === "remove") accounts.splice(index, 1);
-        else accounts[index]!.parked = action === "park";
+        if (action === "remove") {
+          accounts.splice(index, 1);
+          this.health.delete(id);
+          this.quotas.delete(id);
+          this.cooldown.delete(id);
+        } else accounts[index]!.parked = action === "park";
       });
     }
     return this.view();
@@ -154,9 +167,11 @@ export class Pool {
 
   private async check(account: Stored): Promise<Health> {
     let status: Health = "unreachable";
+    const digest = fingerprint(account.token);
+    const headers = { Authorization: `Bearer ${account.token}`, "anthropic-version": "2023-06-01", "anthropic-beta": "oauth-2025-04-20" };
     try {
       const response = await fetch("https://api.anthropic.com/v1/models?limit=1", {
-        headers: { Authorization: `Bearer ${account.token}`, "anthropic-version": "2023-06-01", "anthropic-beta": "oauth-2025-04-20" },
+        headers,
         signal: AbortSignal.timeout(5_000), redirect: "error",
       });
       status = response.ok ? "ready" : response.status === 401 ? "rejected" : "unreachable";
@@ -164,7 +179,27 @@ export class Pool {
     } catch {
       // A connection failure leaves the credential unverified.
     }
-    if ((await this.read()).some(({ id, token }) => id === account.id && token === account.token)) this.health.set(account.id, { status, checkedAt: Date.now(), fingerprint: fingerprint(account.token) });
+    const stillCurrent = async () => (await this.read()).some(({ id, token }) => id === account.id && token === account.token);
+    if (!await stillCurrent()) return status;
+    this.health.set(account.id, { status, checkedAt: Date.now(), fingerprint: digest });
+    if (status === "ready") {
+      const reading = this.quotaChecks.then(async () => {
+        const now = Date.now();
+        const previous = this.quotas.get(account.id);
+        if (now < this.quotaRetryAt || (previous?.fingerprint === digest && now < previous.retryAt)) return;
+        if (!await stillCurrent()) return;
+        const { quota, retryAt } = await readQuota(headers);
+        if (retryAt) this.quotaRetryAt = retryAt;
+        if (!await stillCurrent()) return;
+        const data = quota.status === "unavailable" && previous?.fingerprint === digest && previous.data.status === "available"
+          ? previous.data : quota;
+        // Permission failures are sticky for a token. A replacement immediately gets its own check.
+        const delay = quota.status === "restricted" ? 86_400_000 : 90_000;
+        this.quotas.set(account.id, { fingerprint: digest, data, retryAt: retryAt ?? Date.now() + delay });
+      });
+      this.quotaChecks = reading.catch(() => {});
+      await reading;
+    }
     return status;
   }
 

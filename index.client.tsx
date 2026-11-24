@@ -1,6 +1,7 @@
 import type { PluginClientContext, PluginSidebarItemProps } from "@getpaseo/plugin/client";
 import { SidebarRow } from "@getpaseo/plugin/client/ui";
 import { AccountScreen } from "./client/account-screen";
+import { contributePills } from "./client/pill";
 import { IncidentRow } from "./client/incident";
 import { incidentRow, incidentSchema, resume } from "./shared/contracts";
 
@@ -19,9 +20,11 @@ export default function contribute(client: PluginClientContext) {
     name: "relay-resume", description: "Continue the current Relayline incident", argumentHint: "", context: "agent",
     async onSubmit({ agent, rpc }) { await rpc(resume, { agentId: agent.id }); },
   });
+  const disposePills = contributePills(client);
   const disposeRenderer = client.addTimelineRenderer({ ...incidentRow, schema: incidentSchema, Component: IncidentRow });
   return () => {
     disposeRenderer();
+    disposePills();
     disposeSlash();
     disposeCommand();
     disposeSidebar();

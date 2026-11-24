@@ -20,7 +20,7 @@ export async function readHostConfig(): Promise<HostConfig> {
   return JSON.parse(await readFile(config, "utf8")) as HostConfig;
 }
 
-function competingPlugin(settings: HostConfig) {
+export function competingPlugin(settings: HostConfig) {
   return [settings.plugins?.zerosub, settings.plugins?.["zerosub-oauth"]].some((entry) => entry && entry.enabled !== false);
 }
 
