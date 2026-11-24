@@ -2,7 +2,9 @@ import type { PluginClientContext } from "@getpaseo/plugin/client";
 import { expect, test, vi } from "vitest";
 import { contributePills } from "./pill";
 
-vi.mock("react-native", () => ({ Pressable: "button", ScrollView: "div", Text: "span", View: "div" }));
+vi.mock("react-native", () => ({ ActivityIndicator: "span", Pressable: "button", ScrollView: "div", Text: "span", TextInput: "input", View: "div" }));
+
+vi.mock("@getpaseo/plugin/client/ui", () => ({ Icon: "span", useToast: () => ({ show: vi.fn() }) }));
 
 test("registers a popover for Claude chat, follows upserts and removes pills on cleanup", async () => {
   const observe = vi.fn();

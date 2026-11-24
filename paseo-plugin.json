@@ -1,11 +1,12 @@
 {
   "id": "relayline",
   "name": "Relayline",
-  "description": "Diagnose interrupted agent turns and continue transient failures in Paseo.",
+  "description": "Manage Claude OAuth accounts and switch accounts inside a running Paseo conversation.",
   "requirements": {
     "paseo": ">=0.16.1"
   },
   "media": [
-    "assets/accounts.png"
+    "assets/accounts.png",
+    "assets/preferences.png"
   ]
 }
