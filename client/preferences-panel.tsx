@@ -1,8 +1,7 @@
-import { useQuery } from "@tanstack/react-query";
 import { Text, View } from "react-native";
-import { useRpc, useSettings, type PluginSurfaceProps } from "@getpaseo/plugin/client";
+import type { useSettings, PluginSurfaceProps } from "@getpaseo/plugin/client";
 import { SettingsAction, SettingsCard, SettingsSection, SettingsSelect } from "@getpaseo/plugin/client/ui";
-import { poolStatus, preferences, type Preferences } from "../shared/contracts";
+import type { preferences, Preferences } from "../shared/contracts";
 
 const routing = [
   { label: "Off", value: "off" },
@@ -15,10 +14,11 @@ const recovery = [
   { label: "Record only", value: "observe" },
 ] as const;
 
-export function PreferenceScreen({ theme }: PluginSurfaceProps) {
-  const settings = useSettings(preferences);
-  const status = useRpc(poolStatus);
-  const pool = useQuery({ queryKey: ["relayline-pool", null], queryFn: () => status({}) });
+export function PreferencesPanel({ theme, settings, liveReady }: {
+  theme: PluginSurfaceProps["theme"];
+  settings: ReturnType<typeof useSettings<typeof preferences.schema>>;
+  liveReady: boolean;
+}) {
   const muted = { color: theme.colors.foregroundMuted, fontSize: 13 };
   const change = <K extends keyof Preferences>(key: K, value: Preferences[K]) => {
     if (settings.status === "ready") void settings.save({ ...settings.values, [key]: value }, settings.revision);
@@ -33,11 +33,11 @@ export function PreferenceScreen({ theme }: PluginSurfaceProps) {
   }
   const { values, saving, saveError } = settings;
   return (
-    <View style={{ gap: 24 }}>
+    <View style={{ gap: 14 }}>
       <SettingsSection title="Account routing">
         <SettingsCard>
-          <SettingsSelect label="New Claude sessions" hint={pool.data?.liveReady ? "Choose how Relayline assigns a ready account." : "Enable live switching on the accounts page first."}
-            options={[...routing]} value={values.accountPolicy} disabled={saving || !pool.data?.liveReady}
+          <SettingsSelect label="New Claude sessions" hint={liveReady ? "Choose how Relayline assigns a ready account." : "Enable live switching on this host first."}
+            options={[...routing]} value={values.accountPolicy} disabled={saving || !liveReady}
             onValueChange={(value) => change("accountPolicy", value as Preferences["accountPolicy"])} />
         </SettingsCard>
       </SettingsSection>

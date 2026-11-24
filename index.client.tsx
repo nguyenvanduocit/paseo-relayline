@@ -1,7 +1,6 @@
 import type { PluginClientContext, PluginSidebarItemProps } from "@getpaseo/plugin/client";
 import { SidebarRow } from "@getpaseo/plugin/client/ui";
 import { AccountScreen } from "./client/account-screen";
-import { PreferenceScreen } from "./client/preference-screen";
 import { contributePills } from "./client/pill";
 import { IncidentRow } from "./client/incident";
 import { incidentRow, incidentSchema, resume } from "./shared/contracts";
@@ -11,13 +10,7 @@ function RelaylineItem({ currentScreen, openScreen }: PluginSidebarItemProps) {
 }
 
 export default function contribute(client: PluginClientContext) {
-  const disposeSettings = client.addSettingsScreen({
-    id: "preferences", title: "Preferences", icon: "SlidersHorizontal", Component: PreferenceScreen,
-  });
-  const disposeScreen = client.addScreen({
-    id: "accounts", title: "Relayline",
-    Component: (props) => <AccountScreen {...props} openPreferences={() => client.openSettings("preferences")} />,
-  });
+  const disposeScreen = client.addScreen({ id: "accounts", title: "Relayline", Component: AccountScreen });
   const disposeSidebar = client.addSidebarHeaderItem({ id: "accounts", title: "Relayline", Component: RelaylineItem });
   const disposeCommand = client.addCommandCenterItem({
     id: "switch", title: "Relayline: Manage this agent’s Claude account", icon: "Repeat2", context: "agent",
@@ -36,6 +29,5 @@ export default function contribute(client: PluginClientContext) {
     disposeCommand();
     disposeSidebar();
     disposeScreen();
-    disposeSettings();
   };
 }

@@ -5,9 +5,10 @@ import { useRpc, useSettings, type PluginScreenProps } from "@getpaseo/plugin/cl
 import { Icon, SettingsCard, SettingsInput } from "@getpaseo/plugin/client/ui";
 import { editAccount, importAccounts, poolStatus, preferences, saveAccount, setupLive, useAccount } from "../shared/contracts";
 import { Action, Status, accountStatus } from "./design";
+import { PreferencesPanel } from "./preferences-panel";
 import { QuotaDetails } from "./quota";
 
-export function AccountScreen({ theme, params, layout, openPreferences }: PluginScreenProps & { openPreferences(): void }) {
+export function AccountScreen({ theme, params, layout }: PluginScreenProps) {
   const agentId = typeof params?.agentId === "string" ? params.agentId : undefined;
   const status = useRpc(poolStatus);
   const save = useRpc(saveAccount);
@@ -21,6 +22,7 @@ export function AccountScreen({ theme, params, layout, openPreferences }: Plugin
   const [remove, setRemove] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [message, setMessage] = useState("");
   const colors = theme.colors;
   const accounts = pool.data?.accounts ?? [];
@@ -64,7 +66,7 @@ export function AccountScreen({ theme, params, layout, openPreferences }: Plugin
       await setup({});
       if (settings.status === "ready" && settings.values.accountPolicy === "off") {
         const saved = await settings.save({ ...settings.values, accountPolicy: "sticky" }, settings.revision);
-        if (!saved) throw new Error("Live switching is ready. Choose a routing policy in Preferences.");
+        if (!saved) throw new Error("Live switching is ready. Choose a routing policy in Settings.");
       }
     }, "Live switching is ready.");
   }
@@ -79,7 +81,8 @@ export function AccountScreen({ theme, params, layout, openPreferences }: Plugin
         </View>
         <View style={toolbar}>
           <Action theme={theme} label="Add account" icon="Plus" primary disabled={busy || !!draft} onPress={() => setDraft({ label: "", token: "" })} />
-          <Action theme={theme} label="Preferences" icon="SlidersHorizontal" onPress={openPreferences} />
+          <Action theme={theme} label="Settings" icon={showSettings ? "ChevronUp" : "SlidersHorizontal"} expanded={showSettings}
+            onPress={() => setShowSettings(!showSettings)} />
         </View>
       </View>
 
@@ -94,6 +97,12 @@ export function AccountScreen({ theme, params, layout, openPreferences }: Plugin
               : "Enable the launcher for new Claude sessions on this host."}</Text>
           </View>
           <Action theme={theme} label="Enable" disabled={busy || pool.data.blockedByZeroSub} onPress={enable} />
+        </View>
+      ) : null}
+      {showSettings ? (
+        <View style={{ padding: 14, borderRadius: 11, borderColor: colors.border, borderWidth: 1, gap: 14 }}>
+          <Text accessibilityRole="header" style={{ color: colors.foreground, fontSize: 15, fontWeight: "600" }}>Settings</Text>
+          <PreferencesPanel theme={theme} settings={settings} liveReady={pool.data?.liveReady ?? false} />
         </View>
       ) : null}
       {draft && !draft.id ? editor : null}

@@ -20,7 +20,7 @@ export function accountStatus(account: Account, theme: PluginTheme) {
   }
 }
 
-export function Action({ theme, label, icon, onPress, disabled, primary, danger }: {
+export function Action({ theme, label, icon, onPress, disabled, primary, danger, expanded }: {
   theme: PluginTheme;
   label: string;
   icon?: string;
@@ -28,11 +28,12 @@ export function Action({ theme, label, icon, onPress, disabled, primary, danger 
   disabled?: boolean;
   primary?: boolean;
   danger?: boolean;
+  expanded?: boolean;
 }) {
   const colors = theme.colors;
   const ink = primary ? colors.accentForeground : danger ? colors.statusDanger : colors.foreground;
   return (
-    <Pressable accessibilityRole="button" disabled={disabled} onPress={onPress}
+    <Pressable accessibilityRole="button" accessibilityState={{ expanded, disabled }} disabled={disabled} onPress={onPress}
       style={({ pressed }) => ({
         flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
         minHeight: 34, paddingHorizontal: 10, borderRadius: 7, opacity: disabled ? 0.45 : 1,

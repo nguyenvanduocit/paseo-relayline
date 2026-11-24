@@ -1,7 +1,7 @@
 {
   "name": "relayline",
   "private": true,
-  "version": "1.2.0",
+  "version": "1.2.1",
   "files": [
     "paseo-plugin.json",
     "OVERVIEW.md",
