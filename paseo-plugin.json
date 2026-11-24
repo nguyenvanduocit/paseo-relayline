@@ -4,5 +4,8 @@
   "description": "Diagnose interrupted agent turns and continue transient failures in Paseo.",
   "requirements": {
     "paseo": ">=0.16.1"
-  }
+  },
+  "media": [
+    "assets/accounts.png"
+  ]
 }

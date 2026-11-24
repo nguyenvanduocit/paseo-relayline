@@ -47,7 +47,9 @@ export default function contribute(server: PluginServerContext) {
       console.warn("[Relayline] Could not inspect an interrupted turn.");
     });
   });
-  server.on("agent.turn_started", ({ agent }) => recovery.forget(agent.id));
+  server.on("agent.turn_started", ({ agent }, { paseo }) => {
+    void recovery.supersede(paseo, agent.id).catch(() => {});
+  });
   const forgetAgent = (id: string) => {
     recovery.forget(id);
     pool.clear(id);

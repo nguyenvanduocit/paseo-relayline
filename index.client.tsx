@@ -9,15 +9,22 @@ function RelaylineItem({ currentScreen, openScreen }: PluginSidebarItemProps) {
 }
 
 export default function contribute(client: PluginClientContext) {
-  client.addScreen({ id: "accounts", title: "Relayline", Component: AccountScreen });
-  client.addSidebarHeaderItem({ id: "accounts", title: "Relayline", Component: RelaylineItem });
-  client.addCommandCenterItem({
+  const disposeScreen = client.addScreen({ id: "accounts", title: "Relayline", Component: AccountScreen });
+  const disposeSidebar = client.addSidebarHeaderItem({ id: "accounts", title: "Relayline", Component: RelaylineItem });
+  const disposeCommand = client.addCommandCenterItem({
     id: "switch", title: "Relayline: Manage this agent’s Claude account", icon: "Repeat2", context: "agent",
     onSelect({ agent, openScreen }) { openScreen({ screenId: "accounts", params: { agentId: agent.id } }); },
   });
-  client.addSlashCommand({
+  const disposeSlash = client.addSlashCommand({
     name: "relay-resume", description: "Continue the current Relayline incident", argumentHint: "", context: "agent",
     async onSubmit({ agent, rpc }) { await rpc(resume, { agentId: agent.id }); },
   });
-  client.addTimelineRenderer({ ...incidentRow, schema: incidentSchema, Component: IncidentRow });
+  const disposeRenderer = client.addTimelineRenderer({ ...incidentRow, schema: incidentSchema, Component: IncidentRow });
+  return () => {
+    disposeRenderer();
+    disposeSlash();
+    disposeCommand();
+    disposeSidebar();
+    disposeScreen();
+  };
 }

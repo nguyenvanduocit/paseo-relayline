@@ -22,6 +22,8 @@ export function AccountScreen({ theme, params }: PluginScreenProps) {
   const pool = useQuery({ queryKey: ["relayline-pool", agentId ?? null], queryFn: () => status({ agentId }), refetchInterval: 10_000 });
   const [draft, setDraft] = useState<{ id?: string; label: string; token: string } | null>(null);
   const [remove, setRemove] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [optionsVisible, setOptionsVisible] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const change = <K extends keyof Preferences>(key: K, value: Preferences[K]) => {
@@ -41,8 +43,19 @@ export function AccountScreen({ theme, params }: PluginScreenProps) {
     }
   }
   const muted = { color: theme.colors.foregroundMuted };
+  const editor = draft ? (
+    <SettingsCard key={draft.id ?? "new"}>
+      <SettingsInput label="Account name" initialValue={draft.label} onChangeText={(label) => setDraft({ ...draft, label })} />
+      <SettingsInput label="OAuth token" secureTextEntry hint={draft.id ? "Leave blank to keep the current token." : undefined}
+        onChangeText={(token) => setDraft({ ...draft, token })} />
+      <SettingsAction label={draft.id ? "Account changes" : "Add this account"} actionLabel="Save"
+        disabled={busy || !draft.label.trim() || (!draft.id && !draft.token.trim())}
+        onPress={() => void perform(async () => { await save(draft); setDraft(null); }, "Account saved.")} />
+      <SettingsAction label="Discard changes" actionLabel="Cancel" disabled={busy} onPress={() => setDraft(null)} />
+    </SettingsCard>
+  ) : null;
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: theme.colors.surface0 }} contentContainerStyle={{ padding: 16, gap: 16 }}>
+    <ScrollView style={{ flex: 1, backgroundColor: theme.colors.surface0 }} contentContainerStyle={{ padding: 16, gap: 16, width: "100%", maxWidth: 820, alignSelf: "center" }}>
       {message ? <Text accessibilityLiveRegion="polite" style={muted}>{message}</Text> : null}
       {pool.isError ? <Text style={muted}>Could not read accounts from this host.</Text> : null}
       <SettingsSection title="Claude accounts">
@@ -55,39 +68,37 @@ export function AccountScreen({ theme, params }: PluginScreenProps) {
               setMessage(count ? `Imported ${count} accounts. Checking their tokens…` : "No new compatible accounts found.");
             }, "")} />
         </SettingsCard>
-        {draft ? (
-          <SettingsCard key={draft.id ?? "new"}>
-            <SettingsInput label="Account name" initialValue={draft.label} onChangeText={(label) => setDraft({ ...draft, label })} />
-            <SettingsInput label="OAuth token" secureTextEntry hint={draft.id ? "Leave blank to keep the current token." : undefined}
-              onChangeText={(token) => setDraft({ ...draft, token })} />
-            <SettingsAction label={draft.id ? "Account changes" : "Add this account"} actionLabel="Save"
-              disabled={busy || !draft.label.trim() || (!draft.id && !draft.token.trim())}
-              onPress={() => void perform(async () => { await save(draft); setDraft(null); }, "Account saved.")} />
-            <SettingsAction label="Discard changes" actionLabel="Cancel" disabled={busy} onPress={() => setDraft(null)} />
-          </SettingsCard>
-        ) : null}
+        {draft && !draft.id ? editor : null}
         {(pool.data?.accounts ?? []).map((account) => (
           <SettingsCard key={account.id}>
             <SettingsAction label={account.label} hint={[
               account.parked ? "Parked" : healthLabel[account.health],
               pool.data?.activeAccount === account.id ? "In use by this agent" : null,
-            ].filter(Boolean).join(" · ")} actionLabel="Edit" disabled={busy || !!draft}
-              onPress={() => setDraft({ id: account.id, label: account.label, token: "" })} />
+            ].filter(Boolean).join(" · ")} actionLabel={expanded === account.id ? "Done" : "Manage"} disabled={busy || !!draft}
+              onPress={() => {
+                setExpanded(expanded === account.id ? null : account.id);
+                setRemove(null);
+              }} />
             {agentId && pool.data?.activeAccount && pool.data.activeAccount !== account.id && !account.parked && account.health === "ready" ? (
               <SettingsAction label="This conversation" actionLabel="Switch account" disabled={busy}
                 onPress={() => void perform(() => activate({ agentId, accountId: account.id }), "Account switched.")} />
             ) : null}
-            <SettingsAction label="Token health" actionLabel="Check" disabled={busy}
-              onPress={() => void perform(() => edit({ id: account.id, action: "check" }), "Check complete.")} />
-            <SettingsAction label={account.parked ? "Allow automatic selection" : "Take out of rotation"}
-              actionLabel={account.parked ? "Restore" : "Park"} disabled={busy}
-              onPress={() => void perform(() => edit({ id: account.id, action: account.parked ? "restore" : "park" }), "")} />
-            <SettingsAction label={remove === account.id ? "Remove from Relayline? Claude keeps its login." : "Remove account"}
-              actionLabel={remove === account.id ? "Confirm removal" : "Remove"} disabled={busy}
-              onPress={() => {
-                if (remove !== account.id) return setRemove(account.id);
-                void perform(async () => { await edit({ id: account.id, action: "remove" }); setRemove(null); }, "Account removed.");
-              }} />
+            {expanded === account.id ? <>
+              <SettingsAction label="Name or OAuth token" actionLabel="Edit" disabled={busy || !!draft}
+                onPress={() => setDraft({ id: account.id, label: account.label, token: "" })} />
+              {draft?.id === account.id ? editor : null}
+              <SettingsAction label="Token health" actionLabel="Check" disabled={busy}
+                onPress={() => void perform(() => edit({ id: account.id, action: "check" }), "Check complete.")} />
+              <SettingsAction label={account.parked ? "Allow automatic selection" : "Take out of rotation"}
+                actionLabel={account.parked ? "Restore" : "Park"} disabled={busy}
+                onPress={() => void perform(() => edit({ id: account.id, action: account.parked ? "restore" : "park" }), "")} />
+              <SettingsAction label={remove === account.id ? "Remove from Relayline? Claude keeps its login." : "Remove account"}
+                actionLabel={remove === account.id ? "Confirm removal" : "Remove"} disabled={busy}
+                onPress={() => {
+                  if (remove !== account.id) return setRemove(account.id);
+                  void perform(async () => { await edit({ id: account.id, action: "remove" }); setRemove(null); }, "Account removed.");
+                }} />
+            </> : null}
           </SettingsCard>
         ))}
       </SettingsSection>
@@ -102,7 +113,9 @@ export function AccountScreen({ theme, params }: PluginScreenProps) {
                 if (!saved) throw new Error("Live switching is ready. Choose an account policy below.");
               }
             }, "Live switching is ready.")} /> : null}
-          {settings.status === "ready" ? (
+          <SettingsAction label="Account and recovery options" actionLabel={optionsVisible ? "Hide" : "Customize"}
+            onPress={() => setOptionsVisible(!optionsVisible)} />
+          {optionsVisible && (settings.status === "ready" ? (
             <>
               <SettingsSelect label="Account policy" hint="Choose which verified account new Claude sessions start on."
                 options={[{ label: "Off", value: "off" }, { label: "Last working account", value: "sticky" }, { label: "Spread new sessions", value: "spread" }]}
@@ -121,7 +134,7 @@ export function AccountScreen({ theme, params }: PluginScreenProps) {
                 value={settings.values.scope} disabled={settings.saving}
                 onValueChange={(value) => change("scope", value as Preferences["scope"])} />
             </>
-          ) : <View style={{ padding: 12 }}><Text style={muted}>{settings.status === "loading" ? "Loading preferences…" : "Preferences are unavailable."}</Text></View>}
+          ) : <View style={{ padding: 12 }}><Text style={muted}>{settings.status === "loading" ? "Loading preferences…" : "Preferences are unavailable."}</Text></View>)}
         </SettingsCard>
         {settings.saveError ? <Text style={muted}>Could not save preferences. Reopen this screen and try again.</Text> : null}
       </SettingsSection>

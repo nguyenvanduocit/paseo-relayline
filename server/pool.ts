@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile, unlink } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { z } from "zod";
@@ -12,10 +12,11 @@ const storedAccounts = z.array(z.object({
 }));
 type Stored = z.infer<typeof storedAccounts>[number];
 type Health = "unchecked" | "ready" | "rejected" | "unreachable";
-type Route = { accountId: string; directory: string; token: string };
+type Route = { accountId: string; directory: string; fingerprint: string };
+const fingerprint = (token: string) => createHash("sha256").update(token).digest("hex");
 
 export class Pool {
-  private readonly health = new Map<string, { status: Health; checkedAt: number }>();
+  private readonly health = new Map<string, { status: Health; checkedAt: number; fingerprint: string }>();
   private readonly cooldown = new Map<string, number>();
   private readonly assignments = new Map<string, Route>();
   private readonly switches = new Set<string>();
@@ -64,9 +65,9 @@ export class Pool {
 
   async view(agentId?: string) {
     const now = Date.now();
-    const accounts = (await this.read()).map(({ id, label, parked }) => {
+    const accounts = (await this.read()).map(({ id, label, parked, token }) => {
       const until = this.cooldown.get(id);
-      return { id, label, parked, health: until && until > now ? "cooling" as const : this.health.get(id)?.status ?? "unchecked",
+      return { id, label, parked, health: until && until > now ? "cooling" as const : this.tokenHealth(id, token),
         availableAt: until && until > now ? until : null };
     });
     return { accounts, activeAccount: agentId ? this.assignments.get(agentId)?.accountId ?? null : null, liveReady: await liveConfigured() };
@@ -85,6 +86,7 @@ export class Pool {
       return account;
     });
     if (token && await this.check(account) === "ready" && id) {
+      this.cooldown.delete(id);
       const agents = [...this.assignments].filter(([, route]) => route.accountId === id).map(([agentId]) => agentId);
       await Promise.allSettled(agents.map((agentId) => this.move(agentId, id)));
     }
@@ -145,6 +147,11 @@ export class Pool {
     }
   }
 
+  private tokenHealth(id: string, token: string): Health {
+    const current = this.health.get(id);
+    return current?.fingerprint === fingerprint(token) ? current.status : "unchecked";
+  }
+
   private async check(account: Stored): Promise<Health> {
     let status: Health = "unreachable";
     try {
@@ -157,14 +164,14 @@ export class Pool {
     } catch {
       // A connection failure leaves the credential unverified.
     }
-    if ((await this.read()).some(({ id, token }) => id === account.id && token === account.token)) this.health.set(account.id, { status, checkedAt: Date.now() });
+    if ((await this.read()).some(({ id, token }) => id === account.id && token === account.token)) this.health.set(account.id, { status, checkedAt: Date.now(), fingerprint: fingerprint(account.token) });
     return status;
   }
 
   private async select(settings: Preferences, except?: string) {
     const now = Date.now();
     const accounts = (await this.read()).filter((account) => account.id !== except && !account.parked &&
-      (this.cooldown.get(account.id) ?? 0) <= now && this.health.get(account.id)?.status === "ready");
+      (this.cooldown.get(account.id) ?? 0) <= now && this.tokenHealth(account.id, account.token) === "ready");
     if (settings.accountPolicy === "spread") {
       const counts = new Map<string, number>();
       for (const assignment of this.assignments.values()) counts.set(assignment.accountId, (counts.get(assignment.accountId) ?? 0) + 1);
@@ -182,7 +189,7 @@ export class Pool {
     const account = await this.select(settings);
     if (!account) return;
     const directory = liveClaudeDirectory();
-    this.assignments.set(agentId, { accountId: account.id, directory, token: account.token });
+    this.assignments.set(agentId, { accountId: account.id, directory, fingerprint: fingerprint(account.token) });
     this.previous = account.id;
     return { CLAUDE_CODE_OAUTH_TOKEN: account.token, ANTHROPIC_AUTH_TOKEN: "", ANTHROPIC_API_KEY: "", RELAYLINE_LIVE_DIR: directory };
   }
@@ -198,15 +205,16 @@ export class Pool {
     this.switches.add(agentId);
     try {
       const account = (await this.read()).find((entry) => entry.id === accountId && !entry.parked);
-      if (!account || this.health.get(account.id)?.status !== "ready" || (this.cooldown.get(account.id) ?? 0) > Date.now()) {
+      if (!account || this.tokenHealth(account.id, account.token) !== "ready" || (this.cooldown.get(account.id) ?? 0) > Date.now()) {
         throw new Error("That account is not ready.");
       }
-      if (account.id === current.accountId && account.token === current.token) return;
+      const digest = fingerprint(account.token);
+      if (account.id === current.accountId && digest === current.fingerprint) return;
       if (this.assignments.get(agentId) !== current || !(await updateClaudeToken(current.directory, account.token))) {
         throw new Error("Claude did not confirm the live account switch.");
       }
       if (this.assignments.get(agentId) === current) {
-        this.assignments.set(agentId, { ...current, accountId, token: account.token });
+        this.assignments.set(agentId, { ...current, accountId, fingerprint: digest });
         this.previous = accountId;
       }
     } finally {
@@ -218,7 +226,7 @@ export class Pool {
     const current = this.assignments.get(agentId);
     if (!current || settings.accountPolicy === "off") return false;
     if (reason === "quota") this.cooldown.set(current.accountId, Date.now() + 30 * 60_000);
-    else this.health.set(current.accountId, { status: "rejected", checkedAt: Date.now() });
+    else this.health.set(current.accountId, { status: "rejected", checkedAt: Date.now(), fingerprint: current.fingerprint });
     const next = await this.select(settings, current.accountId);
     if (!next) return false;
     await this.move(agentId, next.id);

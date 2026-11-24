@@ -39,6 +39,15 @@ export class Recovery {
     this.records.delete(agentId);
   }
 
+  async supersede(paseo: Paseo, agentId: string) {
+    const record = this.records.get(agentId);
+    this.forget(agentId);
+    if (record && (record.incident.stage === "ready" || record.incident.stage === "scheduled")) {
+      record.incident.stage = "superseded";
+      await this.append(paseo, agentId, record);
+    }
+  }
+
   async observe(paseo: Paseo, event: Ended) {
     if (this.stopped || event.agent.background || event.agent.parentAgentId || event.outcome.kind === "canceled" || !event.turnId) return;
     if (this.settings.scope === "claude" && event.agent.provider !== "claude") return;
