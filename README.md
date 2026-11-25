@@ -14,7 +14,7 @@ paseo plugin install git:nguyenvanduocit/paseo-relayline --ref v1.2.1
 2. If replacing ZeroSub, disable its plugin after the import so that one plugin owns Claude routing on the host.
 3. Choose **Enable** under **Live account switching**. Paseo applies the launcher configuration. New managed sessions use live switching. Reopen an existing session during an idle period if you want it to join the pool.
 
-Generate a token through Claude Code's `claude setup-token` sign-in flow. Paste it into Relayline's private token field. Existing sign-in folders stay in place.
+To create a token in Relayline, choose **Add account**, enter a name, and select **Create token with Claude Code**. Approve the request on Anthropic’s sign-in page and enter its authorization code in Relayline. The plugin runs the official `claude setup-token` command on the host and saves the resulting token. You can also paste a token you created yourself. Guided setup requires Python 3 on macOS or Linux. Existing sign-in folders stay in place.
 
 ## Accounts and recovery
 
@@ -24,7 +24,13 @@ Generate a token through Claude Code's `claude setup-token` sign-in flow. Paste 
 - For transient provider failures, Relayline can offer a continuation in the timeline. **Continue automatically when safe** adds one delayed follow-up only when the turn shows one prompt, no tool calls and no partial response. Choose **Record only** to keep diagnostics without continuation. Account failover remains governed by the account policy.
 - Relayline shows the percentage remaining and reset time for each quota window Anthropic returns. Inference-scoped setup tokens can be valid while quota access is restricted. In that case, the pill can show input and output tokens reported by the session, which measure usage and do not estimate subscription headroom. An account that reaches a recognized limit still cools down for 30 minutes.
 
+## Account backups
+
+Open **Backup & restore** on the accounts page. **Create backup** encrypts account names, tokens and pause status with a password. Download the resulting JSON where file downloads are supported, or copy the encrypted text. **Restore from backup** is always shown, even when the pool is empty: select the file or paste the encrypted text and enter the same password. Restore adds accounts and skips duplicate tokens. Host settings, session assignments and quota readings are outside the account backup.
+
 ## Data and host access
+
+Guided setup runs Claude Code in a temporary profile. The plugin relays the authorization code to the local CLI and removes the temporary profile once the command ends. CLI output and the issued token are kept on the host. Account backups use scrypt and AES-256-GCM. The client receives the encrypted backup for export, and its password is sent to the host for encryption or restoration.
 
 Relayline stores token records in a host-local file with owner-only permissions under the Paseo home. Tokens go to api.anthropic.com for verification and a quota check and to the local Claude Code process for authentication. The account screen receives names, health and assignment, without token values. Import reads ZeroSub's registry and configured Claude account settings. It skips custom endpoints and leaves the source files in place.
 

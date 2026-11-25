@@ -10,7 +10,10 @@ interface TurnItem {
   text?: string;
 }
 
+const claudeQuotaRefusal = /^(?:\[System Error\]\s*)?You['’]ve (?:hit|reached) your (?:\d+-hour|weekly) limit\b/i;
+
 export function classify({ code = "", message }: ErrorNotice): Incident["kind"] {
+  if (claudeQuotaRefusal.test(message.trimStart())) return "quota";
   const detail = `${code} ${message.slice(0, 2_000)}`;
   if (/\b(?:401|403)\b|authentication_error|OAuth|invalid API key/i.test(detail)) return "authentication";
   if (/\b429\b|\bquota\b|usage limit|rate.limit|spend limit|out of credits/i.test(detail)) return "quota";

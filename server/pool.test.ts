@@ -97,3 +97,25 @@ it("keeps token health usable while pausing all quota probes on provider throttl
   expect(accounts.map((account) => account.quota?.status ?? null)).toEqual(["unavailable", null]);
   expect(fetcher.mock.calls.filter(([url]) => url.endsWith("/api/oauth/usage"))).toHaveLength(1);
 });
+
+it("imports encrypted backups additively and preserves the pause state of new accounts", async () => {
+  const otherRoot = await mkdtemp(join(tmpdir(), "relayline-restore-"));
+  try {
+    const { Pool } = await import("./pool");
+    const target = new Pool(otherRoot);
+    const { accounts } = await pool.save({ label: "Backed up", token: second });
+    await pool.edit(accounts[0]!.id, "park");
+    await pool.save({ label: "Source duplicate", token: first });
+    await target.save({ label: "Existing account", token: first });
+    const password = "fixture-long-password";
+    const { backup } = await pool.exportBackup(password);
+    expect(await target.importBackup(backup, password)).toEqual({ added: 1, skipped: 1 });
+    expect((await target.view()).accounts.map(({ label, parked }) => ({ label, parked }))).toEqual([
+      { label: "Existing account", parked: false },
+      { label: "Backed up", parked: true },
+    ]);
+    expect(await target.importBackup(backup, password)).toEqual({ added: 0, skipped: 2 });
+  } finally {
+    await rm(otherRoot, { recursive: true, force: true });
+  }
+});

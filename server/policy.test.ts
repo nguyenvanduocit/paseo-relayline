@@ -8,8 +8,11 @@ describe("provider failure classification", () => {
     ["HTTP 503 Service Unavailable", "upstream"],
     ["ECONNRESET", "connection"],
     ["HTTP 429 Usage limit", "quota"],
+    ["You've hit your 5-hour limit · resets 6:30pm (Asia/Saigon)", "quota"],
+    ["[System Error] You’ve reached your weekly limit · resets Monday", "quota"],
     ["HTTP 401 OAuth token invalid", "authentication"],
     ["Repository is missing", "other"],
+    ["You've hit your context limit", "other"],
     ["429 Rate limit during HTTP 503 retry", "quota"],
   ])("classifies %s", (message, kind) => {
     expect(classify({ message })).toBe(kind);

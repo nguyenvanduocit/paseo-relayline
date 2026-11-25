@@ -4,6 +4,8 @@ import { Pressable, ScrollView, Text, View } from "react-native";
 import { useRpc, useSettings, type PluginScreenProps } from "@getpaseo/plugin/client";
 import { Icon, SettingsCard, SettingsInput } from "@getpaseo/plugin/client/ui";
 import { editAccount, importAccounts, poolStatus, preferences, saveAccount, setupLive, useAccount } from "../shared/contracts";
+import { BackupPanel } from "./backup-panel";
+import { TokenSetupControl } from "./token-setup";
 import { Action, Status, accountStatus } from "./design";
 import { PreferencesPanel } from "./preferences-panel";
 import { QuotaDetails } from "./quota";
@@ -23,6 +25,7 @@ export function AccountScreen({ theme, params, layout }: PluginScreenProps) {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showBackups, setShowBackups] = useState(false);
   const [message, setMessage] = useState("");
   const colors = theme.colors;
   const accounts = pool.data?.accounts ?? [];
@@ -47,12 +50,13 @@ export function AccountScreen({ theme, params, layout }: PluginScreenProps) {
   const toolbar = { flexDirection: "row" as const, flexWrap: "wrap" as const, alignItems: "center" as const, gap: 8 };
   const editor = draft ? (
     <View key={draft.id ?? "new"} style={{ gap: 10 }}>
-      {!draft.id ? <Text style={muted}>Create a token with Claude Code’s setup-token command.</Text> : null}
       <SettingsCard>
         <SettingsInput label="Account name" initialValue={draft.label} onChangeText={(label) => setDraft({ ...draft, label })} />
-        <SettingsInput label="OAuth token" secureTextEntry hint={draft.id ? "Leave blank to keep the current token." : undefined}
+        <SettingsInput label="Existing OAuth token" secureTextEntry hint={draft.id ? "Leave blank to keep the current token." : "Paste a token if you already have one."}
           onChangeText={(token) => setDraft({ ...draft, token })} />
       </SettingsCard>
+      <TokenSetupControl theme={theme} accountId={draft.id} label={draft.label} disabled={busy}
+        onSaved={() => { setDraft(null); setMessage("Account saved."); void pool.refetch(); }} />
       <View style={toolbar}>
         <Action theme={theme} label="Save" primary disabled={busy || !draft.label.trim() || (!draft.id && !draft.token.trim())}
           onPress={() => void perform(async () => { await save(draft); setDraft(null); }, "Account saved.")} />
@@ -158,11 +162,13 @@ export function AccountScreen({ theme, params, layout }: PluginScreenProps) {
       ) : pool.data ? <Text style={muted}>Add a Claude account or import your existing accounts from ZeroSub.</Text> : null}
 
       <View style={toolbar}>
+        <Action theme={theme} label="Backup & restore" icon="Archive" expanded={showBackups} disabled={busy} onPress={() => setShowBackups(!showBackups)} />
         <Action theme={theme} label="Import from ZeroSub" icon="Download" disabled={busy} onPress={() => void perform(async () => {
           const { count } = await importExisting({});
           setMessage(count ? `Imported ${count} accounts. Checking their tokens…` : "No new compatible accounts found.");
         })} />
       </View>
+      {showBackups ? <BackupPanel theme={theme} hasAccounts={accounts.length > 0} onImported={() => void pool.refetch()} /> : null}
     </ScrollView>
   );
 }

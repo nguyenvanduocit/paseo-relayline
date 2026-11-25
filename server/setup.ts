@@ -31,7 +31,7 @@ export async function liveConfigured(): Promise<boolean> {
     await access(bridge).then(() => true, () => false);
 }
 
-async function findCommand(name: string): Promise<string> {
+export async function findCommand(name: string): Promise<string> {
   const { stdout } = await exec("which", [name], { timeout: 3_000 });
   const path = stdout.trim();
   if (!isAbsolute(path)) throw new Error(`${name} is required on the Paseo host.`);

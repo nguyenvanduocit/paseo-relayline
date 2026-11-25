@@ -2,11 +2,16 @@ import type { PluginServerContext } from "@getpaseo/plugin/server";
 import { Recovery } from "./server/recovery";
 import { Pool } from "./server/pool";
 import { enableLive } from "./server/setup";
-import { editAccount, importAccounts, poolStatus, preferences, resume, saveAccount, setupLive, useAccount } from "./shared/contracts";
+import { TokenSetup } from "./server/token-setup";
+import {
+  beginTokenSetup, cancelTokenSetup, editAccount, exportBackup, importAccounts, importBackup,
+  poolStatus, preferences, resume, saveAccount, setupLive, submitSetupCode, tokenSetupStatus, useAccount,
+} from "./shared/contracts";
 
 export default function contribute(server: PluginServerContext) {
   const pool = new Pool();
   const recovery = new Recovery(pool);
+  const tokenSetup = new TokenSetup(pool);
   let values = preferences.schema.parse({});
   const refresh = () => void pool.recheck().catch(() => console.warn("[Relayline] Could not check account health."));
   const timer = setInterval(refresh, 300_000);
@@ -38,6 +43,19 @@ export default function contribute(server: PluginServerContext) {
     return { ...poolView, sessionUsage: session?.agent.lastUsage ?? null };
   });
   server.handle(saveAccount, (input) => pool.save(input));
+  server.handle(beginTokenSetup, (input) => tokenSetup.begin(input));
+  server.handle(tokenSetupStatus, ({ id }) => tokenSetup.status(id));
+  server.handle(submitSetupCode, ({ id, code }) => tokenSetup.submit(id, code));
+  server.handle(cancelTokenSetup, ({ id }) => {
+    tokenSetup.cancel(id);
+    return {};
+  });
+  server.handle(exportBackup, ({ password }) => pool.exportBackup(password));
+  server.handle(importBackup, async ({ backup, password }) => {
+    const result = await pool.importBackup(backup, password);
+    refresh();
+    return result;
+  });
   server.handle(editAccount, ({ id, action }) => pool.edit(id, action));
   server.handle(importAccounts, async () => {
     const count = await pool.importZeroSub();
@@ -67,5 +85,6 @@ export default function contribute(server: PluginServerContext) {
     clearInterval(timer);
     unsubscribe();
     recovery.close();
+    tokenSetup.dispose();
   };
 }

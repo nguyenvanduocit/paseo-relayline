@@ -61,3 +61,42 @@ export const useAccount = defineRpc({ name: "relayline.pool.use",
 
 export const setupLive = defineRpc({ name: "relayline.pool.setup",
   input: z.object({}), output: z.object({ ready: z.boolean() }) });
+
+export const maxBackupSize = 1_500_000;
+export const minBackupPassword = 12;
+const backupPassword = z.string().min(minBackupPassword).max(256);
+export const exportBackup = defineRpc({
+  name: "relayline.backup.export",
+  input: z.object({ password: backupPassword }),
+  output: z.object({ backup: z.string().max(maxBackupSize), count: z.number() }),
+});
+export const importBackup = defineRpc({
+  name: "relayline.backup.import",
+  input: z.object({ password: backupPassword, backup: z.string().trim().min(1).max(maxBackupSize) }),
+  output: z.object({ added: z.number(), skipped: z.number() }),
+});
+
+export const setupTokenState = z.object({
+  id: z.string(),
+  phase: z.enum(["starting", "authorize", "exchanging", "saving", "saved", "failed"]),
+  url: z.string().nullable(),
+  detail: z.string().nullable(),
+});
+const setupId = z.object({ id: z.string().uuid() });
+export const beginTokenSetup = defineRpc({
+  name: "relayline.token.begin",
+  input: z.object({ accountId: z.string().optional(), label: z.string().trim().min(1).max(64) }),
+  output: setupTokenState,
+});
+export const tokenSetupStatus = defineRpc({ name: "relayline.token.status", input: setupId, output: setupTokenState });
+export const setupCodeHelp = "Paste the complete code from Claude, including the # and the characters after it.";
+export function isCompleteSetupCode(code: string): boolean {
+  return /^(?!sk-ant-oat)[\x21-\x22\x24-\x7e]+#[\x21-\x22\x24-\x7e]+$/.test(code.trim());
+}
+
+export const submitSetupCode = defineRpc({
+  name: "relayline.token.submit",
+  input: setupId.extend({ code: z.string().trim().min(1).max(2048).regex(/^[\x21-\x7e]+$/) }),
+  output: setupTokenState,
+});
+export const cancelTokenSetup = defineRpc({ name: "relayline.token.cancel", input: setupId, output: z.object({}) });

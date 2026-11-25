@@ -4,10 +4,10 @@ import { isAbsolute, join } from "node:path";
 import { z } from "zod";
 import { liveClaudeDirectory, updateClaudeToken } from "./claude-live";
 import { competingPlugin, liveConfigured, paseoHome, readHostConfig } from "./setup";
+import { credential, decryptAccounts, encryptAccounts } from "./backup";
 import { readQuota } from "./quota";
 import type { Preferences, Quota } from "../shared/contracts";
 
-const credential = z.string().regex(/^sk-ant-oat[A-Za-z0-9_-]+$/).max(8192);
 const storedAccounts = z.array(z.object({
   id: z.string(), label: z.string(), token: credential, parked: z.boolean().default(false),
 }));
@@ -82,7 +82,7 @@ export class Pool {
       liveReady: await liveConfigured(), blockedByZeroSub: !!config && competingPlugin(config) };
   }
 
-  async save({ id, label, token }: { id?: string; label: string; token: string }) {
+  async save({ id, label, token }: { id?: string; label: string; token: string }, { verifyInBackground = false } = {}) {
     if (token && !credential.safeParse(token).success) throw new Error("Enter a Claude OAuth setup token.");
     const account = await this.mutate((accounts) => {
       const current = accounts.find((candidate) => candidate.id === id);
@@ -94,12 +94,38 @@ export class Pool {
       else accounts.push(account);
       return account;
     });
-    if (token && await this.check(account) === "ready" && id) {
-      this.cooldown.delete(id);
-      const agents = [...this.assignments].filter(([, route]) => route.accountId === id).map(([agentId]) => agentId);
-      await Promise.allSettled(agents.map((agentId) => this.move(agentId, id)));
+    if (token) {
+      const verification = this.check(account).then(async (status) => {
+        if (!id || status !== "ready") return;
+        this.cooldown.delete(id);
+        const agents = [...this.assignments].filter(([, route]) => route.accountId === id).map(([agentId]) => agentId);
+        await Promise.allSettled(agents.map((agentId) => this.move(agentId, id)));
+      });
+      if (verifyInBackground) void verification.catch(() => {});
+      else await verification;
     }
     return this.view();
+  }
+
+  async exportBackup(password: string) {
+    const data = (await this.read()).map(({ label, token, parked }) => ({ label, token, parked }));
+    if (!data.length) throw new Error("Add an account before creating a backup.");
+    return { backup: await encryptAccounts(data, password), count: data.length };
+  }
+
+  async importBackup(backup: string, password: string) {
+    const incoming = await decryptAccounts(backup, password);
+    return this.mutate((accounts) => {
+      const seen = new Set(accounts.map((account) => account.token));
+      let added = 0;
+      for (const account of incoming) {
+        if (seen.has(account.token)) continue;
+        seen.add(account.token);
+        accounts.push({ ...account, id: randomUUID() });
+        added++;
+      }
+      return { added, skipped: incoming.length - added };
+    });
   }
 
   async importZeroSub() {
